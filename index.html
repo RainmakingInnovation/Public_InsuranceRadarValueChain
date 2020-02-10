@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<style type="text/css">
+  @font-face {
+    font-family: "Graphik Regular";
+    font-style: normal;
+    font-weight: normal;
+    src: local("Graphik Regular"), url("GraphikRegular.woff") format("woff");
+  }
+
+  @font-face {
+    font-family: "Graphik Bold";
+    font-style: normal;
+    font-weight: bold;
+    src: local("Graphik Bold"), url("GraphikBold.woff") format("woff");
+  }
+
+  .arc-labels {
+    text-anchor: middle;
+    font-weight: bold;
+    font-size: 12px;
+    font-family: "Graphik Bold";
+    fill: black;
+  }
+
+  .chart-title {
+    text-anchor: middle;
+    font-weight: bold;
+    font-size: 24px;
+    font-family: "Graphik Bold";
+    fill: black;
+  }
+
+  .value-chain-label {
+    text-anchor: middle;
+    font-weight: bold;
+    font-size: 10px;
+    font-family: "Graphik Bold";
+    fill: black;
+  }
+
+  .nodes {
+    stroke: black;
+    stroke-width: 1px;
+  }
+
+  .node-mouse-over-text {
+    font-size: 12px;
+    text-anchor: start;
+    font-weight: bold;
+    fill: #404e4d;
+    font-family: "Graphik Regular";
+    pointer-events: none;
+    width: 100px;
+  }
+
+  .node-mouse-over-box {
+    pointer-events: none;
+  }
+
+  #chart-container {
+    padding: 20px;
+    text-align: center;
+  }
+
+  #control-container {
+    text-align: center;
+    transform: translateX(-50px);
+  }
+
+  .menu-button {
+    background-color: #8b8b8b;
+    color: white;
+    padding: 6px;
+    margin: 2px;
+    font-family: "Graphik Regular";
+    font-size: 12px;
+    border: none;
+    cursor: pointer;
+  }
+
+  .menu-button:hover {
+    background-color: #727272;
+  }
+
+  .key-label {
+    font-family: "Graphik Regular";
+    font-size: 8px;
+    cursor: pointer;
+  }
+
+  .key-circles {
+    stroke: black;
+    stroke-width: 1px;
+    cursor: pointer;
+  }
+
+  .key-title {
+    font-weight: bold;
+    font-family: "Graphik Bold";
+    font-size: 12px;
+  }
+
+  .wrap-header {
+    font-family: "Graphik Bold";
+    font-weight: bold;
+  }
+</style>
+<body>
+  <div id="chart-container"></div>
+  <div id="control-container">
+    <button class="menu-button" id="save-button">Save Image</button>
+  </div>
+  <div id="tmp-container"></div>
+
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://cdn.rawgit.com/eligrey/canvas-toBlob.js/f1a01896135ab378aa5c0118eadd81da55e698d8/canvas-toBlob.js"></script>
+  <script src="https://cdn.rawgit.com/eligrey/FileSaver.js/e9d941381475b5df8b7d7691013401e171014e89/FileSaver.min.js"></script>
+
+  <script>
+    var width = 1200,
+      height = 620,
+      chart_margin = 60,
+      label_margin = 40,
+      keySize = 4.5,
+      keySpacing = 10,
+      filter = 0,
+      filterKey = "",
+      audienceFilterKey = "";
+
+    var svg = d3
+      .select("#chart-container")
+      .append("svg")
+      .attr("width", width)
+      .attr("height", height);
+
+    var chartSVG = svg
+      .append("g")
+      .attr(
+        "transform",
+        "translate(" + (width / 2 - 50) + "," + (height * 9) / 10 + ")"
+      );
+
+    chartSVG
+      .append("rect")
+      .attr("x", -width / 2 - 50)
+      .attr("y", (-height * 9) / 10)
+      .attr("height", height)
+      .attr("width", width + 200)
+      .attr("fill", "white");
+
+    var chartTitle = chartSVG
+      .append("text")
+      .attr("class", "chart-title")
+      .text("Insurance Value Chain Startup Radar Map")
+      .attr("y", (-height * 8.2) / 10);
+
+    /* chartSVG
+      .append("path")
+      .attr("d", "m -460 0 a 50 50 0 1 1 920 0")
+      .style("stroke", "black"); */
+
+    d3.csv(
+      "https://docs.google.com/spreadsheets/d/e/2PACX-1vSafGm_gSEK_M6dTEcS3sd2N7CcehHPfg561BJtgzrHClIt5DH79yqHI1LpeOLbbwGob_Xi0kVUdxMB/pub?gid=564050449&single=true&output=csv",
+      function(data) {
+        //console.log(data);
+
+        var valueChain_order = [
+          "Product Design",
+          "Distribution",
+          "Underwriting",
+          "Asset Management",
+          "Claims & Payment"
+        ];
+
+        function valChainSort(a, b) {
+          for (i = 0; i < valueChain_order.length; i++) {
+            if (a === valueChain_order[i]) {
+              var valA = i;
+            }
+            if (b === valueChain_order[i]) {
+              var valB = i;
+            }
+          }
+          return valA < valB ? -1 : valA > valB ? 1 : valA >= valB ? 0 : NaN;
+        }
+
+        var test = d3
+          .nest()
+          .key(function(d) {
+            return d["Value Chain"];
+          })
+          .sortKeys(valChainSort)
+          .key(function(d) {
+            return d["Maturity"];
+          })
+          .key(function(d) {
+            return d["Sub Value Chain"];
+          })
+          .rollup(function(v) {
+            return v.length;
+          })
+          .sortValues(function(a, b) {
+            return d3.descending(a.value, b.value);
+          })
+          .entries(data);
+
+        var nested_customColor = [
+          [
+            "#f8e6d1",
+            "#995A28",
+            "#AF692F",
+            "#CE7A35",
+            "#d99352",
+            "#ebb37b",
+            "#f1cba5"
+          ],
+          ["#497330", "#5B8E3B", "#7aa55d", "#9ec187", "#bdd5ae", "#dce9d6"],
+          ["#96762F", "#b79039", "#e9c25b", "#f9d97f", "#fae4a6", "#fdf1d2"],
+          ["#32246f", "#44377C", "#6354a0", "#8b80bd", "#b2a9d2", "#d8d3e7"],
+          ["#8b1b17", "#AA261F", "#ba2922", "#d06e6c", "#dd9d9c", "#edcece"],
+          ["#2653B1", "#295bc2", "#4c7bcf", "#79a0e3", "#abc3ee", "#cddaf5"]
+        ];
+
+        var subValKeyList = [];
+        var subValKeyColourList = [];
+        for (i = 0; i < test.length; i++) {
+          for (j = 0; j < test[i].values.length; j++) {
+            for (k = 0; k < test[i].values[j].values.length; k++)
+              if (subValKeyList.includes(test[i].values[j].values[k].key)) {
+                //
+              } else {
+                subValKeyColourList.push(nested_customColor[i].pop());
+                subValKeyList.push(test[i].values[j].values[k].key);
+              }
+          }
+        }
+
+        function subValChainSort(a, b) {
+          for (i = 0; i < subValKeyList.length; i++) {
+            if (a === subValKeyList[i]) {
+              var valA = i;
+            }
+            if (b === subValKeyList[i]) {
+              var valB = i;
+            }
+          }
+          return valA < valB ? -1 : valA > valB ? 1 : valA >= valB ? 0 : NaN;
+        }
+
+        var count_by_value_chain = d3
+          .nest()
+          .key(function(d) {
+            return d["Value Chain"];
+          })
+          .sortKeys(valChainSort)
+          .rollup(function(v) {
+            return v.length;
+          })
+          .entries(data);
+
+        var count_by_sub_value_chain = d3
+          .nest()
+          .key(function(d) {
+            return d["Sub Value Chain"];
+          })
+          .sortKeys(subValChainSort)
+          .rollup(function(v) {
+            return v.length;
+          })
+          .entries(data);
+
+        var count_by_audience = d3
+          .nest()
+          .key(function(d) {
+            return d["Audience"];
+          })
+          .rollup(function(v) {
+            return v.length;
+          })
+          .entries(data);
+
+        var subVal_color = d3
+          .scaleOrdinal()
+          .domain(
+            d3.values(count_by_sub_value_chain).map(function(d) {
+              return d.key;
+            })
+          )
+          .range(subValKeyColourList);
+
+        var count_by_maturity = d3
+          .nest()
+          .key(function(d) {
+            return d["Maturity"];
+          })
+          .rollup(function(v) {
+            return v.length;
+          })
+          .entries(data);
+
+        /* var maturity_list = [
+          { name: "Existing", inner: 0, outer: 160 },
+          { name: "Emerging", inner: 160, outer: 300 },
+          { name: "Distant", inner: 300, outer: 420 }
+        ]; */
+
+        var maturity_list = [
+          { name: "Existing", inner: 0, outer: 220 },
+          { name: "Emerging", inner: 220, outer: 320 },
+          { name: "Distant", inner: 320, outer: 420 }
+        ];
+
+        //["Existing", "Emerging", "Distant"];
+
+        var numValueChain = count_by_value_chain.length;
+
+        var backgroundArc = d3
+          .arc()
+          .innerRadius(0)
+          .outerRadius(420);
+
+        var existingArc = d3
+          .arc()
+          .innerRadius(0)
+          .outerRadius(220);
+
+        var emergingArc = d3
+          .arc()
+          .innerRadius(220)
+          .outerRadius(320);
+
+        var distantArc = d3
+          .arc()
+          .innerRadius(320)
+          .outerRadius(420);
+
+        var backgroundSegments = chartSVG
+          .selectAll("background-segments")
+          .data(count_by_value_chain)
+          .enter()
+          .append("path")
+          .each(function(d, i) {
+            d.startAngle =
+              (i * 2 * Math.PI) / (numValueChain * 2) - Math.PI / 2;
+          })
+          .each(function(d, i) {
+            d.endAngle =
+              ((i + 1) * 2 * Math.PI) / (numValueChain * 2) - Math.PI / 2;
+          })
+          .attr("id", function(d) {
+            return (
+              "background-segment-" +
+              d.key.replace(/ /g, "-").replace(/&/g, "and")
+            );
+          })
+          .style("opacity", 0)
+          .style("stroke", "white")
+          .style("stroke-width", "2px")
+          .attr("d", backgroundArc);
+
+        var existingSegments = chartSVG
+          .selectAll("existing-segments")
+          .data(count_by_value_chain)
+          .enter()
+          .append("path")
+          .style("fill-opacity", 1)
+          .attr("class", function(d) {
+            return "existing-segments segment-" + d.key.replace(/ /g, "-");
+          })
+          .attr("id", function(d) {
+            return "existing-segment" + d.key.replace(/ /g, "-");
+          })
+          .style("stroke", "white")
+          .style("stroke-width", "2px")
+          .attr("fill", "#DFDFDF") //F4F4F4
+          .attr("d", existingArc);
+
+        var emergingSegments = chartSVG
+          .selectAll("emerging-segments")
+          .data(count_by_value_chain)
+          .enter()
+          .append("path")
+          .style("fill-opacity", 1)
+          .attr("class", function(d) {
+            return "emerging-segments segment-" + d.key.replace(/ /g, "-");
+          })
+          .attr("id", function(d) {
+            return "emerging-segment" + d.key.replace(/ /g, "-");
+          })
+          .style("stroke", "white")
+          .style("stroke-width", "2px")
+          .attr("fill", "#E9E9E9")
+          .attr("d", emergingArc);
+
+        var distantSegments = chartSVG
+          .selectAll("distant-segments")
+          .data(count_by_value_chain)
+          .enter()
+          .append("path")
+          .style("fill-opacity", 1)
+          .attr("class", function(d) {
+            return "distant-segments segment-" + d.key.replace(/ /g, "-");
+          })
+          .attr("id", function(d) {
+            return "distant-segment" + d.key.replace(/ /g, "-");
+          })
+          .style("stroke", "white")
+          .style("stroke-width", "2px")
+          .attr("fill", "#F4F4F4") //DFDFDF
+          .attr("d", distantArc);
+
+        var existing_label = chartSVG
+          .append("text")
+          .attr("class", "value-chain-label")
+          .text("EXISTING")
+          .attr("x", -170)
+          .attr("y", "1.4em");
+
+        var emerging_label = chartSVG
+          .append("text")
+          .attr("class", "value-chain-label")
+          .text("EMERGING")
+          .attr("x", -270)
+          .attr("y", "1.4em");
+
+        var distant_label = chartSVG
+          .append("text")
+          .attr("class", "value-chain-label")
+          .text("DISTANT")
+          .attr("x", -370)
+          .attr("y", "1.4em");
+
+        var labelRadius = 420 * 1.025;
+
+        var labels = chartSVG.append("g").classed("labels", true);
+
+        labels
+          .append("def")
+          .append("path")
+          .attr("id", "label-path")
+          .attr(
+            "d",
+            "m " + -labelRadius + " 0 a 50 50 0 1 1 " + 2 * labelRadius + " 0"
+          );
+
+        labels
+          .selectAll("text")
+          .data(count_by_value_chain)
+          .enter()
+          .append("text")
+          .append("textPath")
+          .attr("class", "arc-labels")
+          .attr("xlink:href", "#label-path")
+          .attr("startOffset", function(d, i) {
+            return (i * 100) / numValueChain + 50 / numValueChain + "%";
+          })
+          .text(function(d) {
+            console.log(d.key);
+            return d.key
+              .replace(/Claims & Payment/g, "Claims, Payment & Support")
+              .toUpperCase();
+          });
+
+        var nodeList = [];
+        data.forEach(function(d) {
+          //console.log(d);
+          for (i = 0; i < count_by_value_chain.length; i++) {
+            if (d["Value Chain"] === count_by_value_chain[i].key) {
+              //console.log('How Many:', count_by_value_chain[i].value)
+              //console.log('Start Angle:', count_by_value_chain[i].startAngle)
+              //console.log('End Angle:', count_by_value_chain[i].endAngle)
+              var tmp_startAngleMin = count_by_value_chain[i].startAngle + 0.02;
+              var tmp_endAngleMax = count_by_value_chain[i].endAngle - 0.02;
+              break;
+            }
+          }
+          for (i = 0; i < maturity_list.length; i++) {
+            if (d["Maturity"] === maturity_list[i]["name"]) {
+              //console.log('InnerRadius:', maturity_list[i]['inner'])
+              //console.log('OuterRadius:', maturity_list[i]['outer'])
+              tmp_innerRadiusMin = maturity_list[i]["inner"] + 2.5;
+              tmp_outerRadiusMax = maturity_list[i]["outer"] - 5;
+              break;
+            }
+          }
+
+          for (i = 0; i < test.length; i++) {
+            if (test[i].key === d["Value Chain"]) {
+              for (j = 0; j < test[i].values.length; j++) {
+                var total = d3.sum(test[i].values[j].values, d => d.value);
+
+                if (test[i].values[j].key === d["Maturity"]) {
+                  var tmp_total = 0;
+                  for (k = 0; k < test[i].values[j].values.length; k++) {
+                    if (
+                      test[i].values[j].values[k].key === d["Sub Value Chain"]
+                    ) {
+                      var angleRange = tmp_endAngleMax - tmp_startAngleMin;
+                      var start =
+                        tmp_startAngleMin + (angleRange * tmp_total) / total;
+                      var end =
+                        tmp_startAngleMin +
+                        (angleRange *
+                          (tmp_total + test[i].values[j].values[k].value)) /
+                          total;
+                      /* console.log(d);
+                      console.log("total", total);
+                      console.log("range", angleRange);
+                      console.log("startAngle", tmp_startAngleMin);
+                      console.log("endAngle", tmp_endAngleMax);
+                      console.log("test", tmp_total / total);
+                      console.log(
+                        "test",
+                        (tmp_total + test[i].values[j].values[k].value) / total
+                      );
+                      console.log("start", start);
+                      console.log("end", end); */
+                      var results = assignRandom(
+                        start,
+                        end,
+                        tmp_innerRadiusMin,
+                        tmp_outerRadiusMax,
+                        nodeList
+                      );
+                    }
+                    tmp_total += test[i].values[j].values[k].value;
+                  }
+                }
+              }
+            }
+          }
+
+          //console.log(tmp_gen.centroid())
+          d.x = results[0];
+          d.y = results[1];
+          d.opacity = 1;
+          d.radius = 3;
+        });
+
+        //console.log(test);
+
+        var key = chartSVG
+          .selectAll("g.key")
+          .data(count_by_sub_value_chain)
+          .enter()
+          .append("g")
+          .attr("id", "key-group")
+          .attr("transform", function(d, i) {
+            var h = keySize + keySpacing;
+            var offset = (h * count_by_sub_value_chain.length) / 2;
+            var horz = width / 2 - 85;
+            var vert = i * h - offset - 225;
+            return "translate(" + horz + "," + vert + ")";
+          });
+
+        key
+          .append("circle")
+          .classed("key-circles", true)
+          .attr("r", keySize)
+          .attr("fill", function(d) {
+            return subVal_color(d.key);
+          })
+          .on("mouseover", function(d) {
+            keyMouseOver(d);
+          })
+          .on("mouseout", keyMouseOut)
+          .on("click", function(d) {
+            if (filterKey === d.key) {
+              filterKey = "";
+              updateNodes(filterKey, audienceFilterKey);
+            } else {
+              filterKey = d.key;
+              updateNodes(filterKey, audienceFilterKey);
+            }
+          });
+
+        key
+          .append("text")
+          .text(function(d) {
+            return d.key;
+          })
+          .classed("key-labels key-label", true)
+          .attr("dx", "1.2em")
+          .attr("dy", "0.25em")
+          .on("mouseover", function(d) {
+            keyMouseOver(d);
+          })
+          .on("mouseout", keyMouseOut)
+          .on("click", function(d) {
+            if (filterKey === d.key) {
+              filterKey = "";
+              updateNodes(filterKey, audienceFilterKey);
+            } else {
+              filterKey = d.key;
+              updateNodes(filterKey, audienceFilterKey);
+            }
+          });
+
+        console.log(
+          key._groups[0][key._groups[0].length - 1].transform.animVal.getItem(0)
+            .matrix.f
+        );
+
+        var keyTitle = chartSVG
+          .append("text")
+          .attr("class", "key-title")
+          .text("Key:")
+          .attr("y", function() {
+            return key.node().transform.animVal.getItem(0).matrix.f - 14;
+          })
+          .attr("x", width / 2 - 90);
+
+        var audienceTitle = chartSVG
+          .append("text")
+          .attr("class", "key-title")
+          .text("Audience:")
+          .attr("y", function() {
+            return (
+              key._groups[0][
+                key._groups[0].length - 1
+              ].transform.animVal.getItem(0).matrix.f + 24
+            );
+          })
+          .attr("x", width / 2 - 90);
+
+        var audienceKey = chartSVG
+          .selectAll("g.audience-key")
+          .data(count_by_audience)
+          .enter()
+          .append("g")
+          .attr("id", "key-audience-group")
+          .attr("transform", function(d, i) {
+            var h = keySize + keySpacing;
+            var horz = width / 2 - 85;
+            var vert =
+              key._groups[0][
+                key._groups[0].length - 1
+              ].transform.animVal.getItem(0).matrix.f +
+              i * h +
+              38;
+            return "translate(" + horz + "," + vert + ")";
+          });
+
+        audienceKey
+          .append("circle")
+          .classed("key-circles", true)
+          .attr("r", keySize)
+          .attr("fill", function(d) {
+            return "white";
+          })
+          .on("mouseover", function(d) {
+            audienceKeyMouseOver(d);
+          })
+          .on("mouseout", audienceKeyMouseOut)
+          .on("click", function(d) {
+            if (audienceFilterKey === d.key) {
+              audienceFilterKey = "";
+              updateNodes(filterKey, audienceFilterKey);
+            } else {
+              audienceFilterKey = d.key;
+              updateNodes(filterKey, audienceFilterKey);
+            }
+          });
+
+        audienceKey
+          .append("text")
+          .text(function(d) {
+            return d.key;
+          })
+          .classed("key-labels key-label", true)
+          .attr("dx", "1.2em")
+          .attr("dy", "0.25em")
+          .on("mouseover", function(d) {
+            audienceKeyMouseOver(d);
+          })
+          .on("mouseout", audienceKeyMouseOut)
+          .on("click", function(d) {
+            if (audienceFilterKey === d.key) {
+              audienceFilterKey = "";
+              updateNodes(filterKey, audienceFilterKey);
+            } else {
+              audienceFilterKey = d.key;
+              updateNodes(filterKey, audienceFilterKey);
+            }
+          });
+
+        var nodes = chartSVG
+          .selectAll("nodes")
+          .data(data)
+          .enter()
+          .append("a")
+          .attr("xlink:href", function(d) {
+            return d.URL;
+          })
+          .attr("target", "_blank")
+          .append("circle")
+          .attr("class", function(d) {
+            return "nodes nodes-" + d["Value Chain"].replace(/ /g, "-");
+          })
+          .attr("r", 3)
+          .attr("fill", function(d) {
+            return subVal_color(d["Sub Value Chain"]);
+          })
+          .attr("cx", function(d) {
+            return d.x;
+          })
+          .attr("cy", function(d) {
+            return d.y;
+          })
+          .on("mouseover", function(d) {
+            nodeMouseOver(d);
+          })
+          .on("mouseout", nodeMouseOut);
+
+        function updateNodes(filterKey, audienceFilterKey) {
+          if (filterKey === "" && audienceFilterKey === "") {
+            data.forEach(function(d) {
+              d.opacity = 1;
+              d.radius = 3;
+            });
+            nodes.attr("opacity", 1).attr("r", 3);
+            key.attr("opacity", 1);
+            audienceKey.attr("opacity", 1);
+          }
+          if (filterKey !== "" && audienceFilterKey === "") {
+            nodes
+              .attr("opacity", function(v) {
+                if (v["Sub Value Chain"] === filterKey) {
+                  v.opacity = 1;
+                  v.radius = 4;
+                } else {
+                  v.opacity = 0.3;
+                  v.radius = 3;
+                }
+                return v.opacity;
+              })
+              .attr("r", function(v) {
+                return v.radius;
+              });
+
+            key.attr("opacity", function(d) {
+              if (d.key === filterKey) {
+                return 1;
+              } else {
+                return 0.3;
+              }
+            });
+
+            audienceKey.attr("opacity", 1);
+          }
+          if (filterKey === "" && audienceFilterKey !== "") {
+            nodes
+              .attr("opacity", function(v) {
+                if (v["Audience"] === audienceFilterKey) {
+                  v.opacity = 1;
+                  v.radius = 4;
+                } else {
+                  v.opacity = 0.3;
+                  v.radius = 3;
+                }
+                return v.opacity;
+              })
+              .attr("r", function(v) {
+                return v.radius;
+              });
+
+            audienceKey.attr("opacity", function(d) {
+              if (d.key === audienceFilterKey) {
+                return 1;
+              } else {
+                return 0.3;
+              }
+            });
+
+            key.attr("opacity", 1);
+          }
+          if (filterKey !== "" && audienceFilterKey !== "") {
+            nodes
+              .attr("opacity", function(v) {
+                if (
+                  v["Audience"] === audienceFilterKey &&
+                  v["Sub Value Chain"] === filterKey
+                ) {
+                  v.opacity = 1;
+                  v.radius = 4;
+                } else {
+                  v.opacity = 0.3;
+                  v.radius = 3;
+                }
+                return v.opacity;
+              })
+              .attr("r", function(v) {
+                return v.radius;
+              });
+            audienceKey.attr("opacity", function(d) {
+              if (d.key === audienceFilterKey) {
+                return 1;
+              } else {
+                return 0.3;
+              }
+            });
+            key.attr("opacity", function(d) {
+              if (d.key === filterKey) {
+                return 1;
+              } else {
+                return 0.3;
+              }
+            });
+          }
+          console.log(data);
+        }
+
+        function assignRandom(
+          tmp_startAngleMin,
+          tmp_endAngleMax,
+          tmp_innerRadiusMin,
+          tmp_outerRadiusMax,
+          nodeList
+        ) {
+          tmp_startAngle =
+            Math.random() * (tmp_endAngleMax - tmp_startAngleMin) +
+            tmp_startAngleMin;
+          tmp_endAngle =
+            Math.random() * (tmp_endAngleMax - tmp_startAngle) + tmp_startAngle;
+          tmp_innerRadius =
+            Math.random() * (tmp_outerRadiusMax - tmp_innerRadiusMin) +
+            tmp_innerRadiusMin;
+          tmp_outerRadius =
+            Math.random() * (tmp_outerRadiusMax - tmp_innerRadius) +
+            tmp_innerRadius;
+          tmp_gen = d3
+            .arc()
+            .innerRadius(tmp_innerRadius)
+            .outerRadius(tmp_outerRadius)
+            .startAngle(tmp_startAngle)
+            .endAngle(tmp_endAngle);
+
+          tmp_x = tmp_gen.centroid()[0];
+          tmp_y = tmp_gen.centroid()[1];
+
+          if (nodeList.length !== 0) {
+            //console.log(nodeList)
+            var distanceCheck = 0;
+            for (l = 0; l < nodeList.length; l++) {
+              distance = Math.sqrt(
+                Math.pow(nodeList[l][0] - tmp_x, 2) +
+                  Math.pow(nodeList[l][1] - tmp_y, 2)
+              );
+              if (distance <= 10) {
+                distanceCheck = 1;
+              }
+            }
+            if (distanceCheck === 1) {
+              return assignRandom(
+                tmp_startAngleMin,
+                tmp_endAngleMax,
+                tmp_innerRadiusMin,
+                tmp_outerRadiusMax,
+                nodeList
+              );
+            } else {
+              nodeList.push([tmp_x, tmp_y]);
+              return [tmp_x, tmp_y];
+            }
+          } else {
+            nodeList.push([tmp_x, tmp_y]);
+            return [tmp_x, tmp_y];
+          }
+        }
+
+        function keyMouseOver(data) {
+          nodes
+            .attr("opacity", function(d) {
+              if (d["Sub Value Chain"] === data.key) {
+                return 1;
+              } else {
+                return 0.3;
+              }
+            })
+            .attr("r", function(d) {
+              if (d["Sub Value Chain"] === data.key) {
+                return 4;
+              } else {
+                return 3;
+              }
+            });
+        }
+
+        function audienceKeyMouseOver(data) {
+          nodes
+            .attr("opacity", function(d) {
+              if (d["Audience"] === data.key) {
+                return 1;
+              } else {
+                return 0.3;
+              }
+            })
+            .attr("r", function(d) {
+              if (d["Audience"] === data.key) {
+                return 4;
+              } else {
+                return 3;
+              }
+            });
+        }
+
+        function keyMouseOut() {
+          nodes
+            .attr("opacity", function(d) {
+              return d.opacity;
+            })
+            .attr("r", function(d) {
+              return d.radius;
+            });
+        }
+
+        function audienceKeyMouseOut() {
+          nodes
+            .attr("opacity", function(d) {
+              return d.opacity;
+            })
+            .attr("r", function(d) {
+              return d.radius;
+            });
+        }
+
+        function nodeMouseOver(data) {
+          var dummyHoverText = chartSVG
+            .append("text")
+            .attr("id", "node-mouse-over-dummy-text")
+            .attr("class", "node-mouse-over-text")
+            .attr("x", function() {
+              return data.x;
+            })
+            .attr("y", function() {
+              return data.y;
+            })
+            .attr("dy", function() {
+              return "-0.75em";
+            })
+            .attr("fill-opacity", 0)
+            .html(function() {
+              var x = d3.select(this).attr("x");
+              return text_wrap(
+                data["Business Description"],
+                data["Startup"],
+                x
+              );
+            });
+
+          var toolBox = chartSVG
+            .append("rect")
+            .attr("id", "node-mouse-over-box")
+            .attr("x", function() {
+              return (
+                data.x -
+                dummyHoverText.node().getBoundingClientRect().width / 2 -
+                8
+              );
+            })
+            .attr("y", function() {
+              return (
+                data.y -
+                dummyHoverText.node().getBoundingClientRect().height -
+                26
+              );
+            })
+            .attr("width", function() {
+              return dummyHoverText.node().getBoundingClientRect().width + 16;
+            })
+            .attr(
+              "height",
+              dummyHoverText.node().getBoundingClientRect().height + 22
+            )
+            .style("fill", "white")
+            .attr("fill-opacity", 0.8);
+
+          var hoverText = chartSVG
+            .append("text")
+            .attr("id", "node-mouse-over-actual-text")
+            .attr("class", "node-mouse-over-text")
+            .attr("x", function() {
+              return (
+                data.x - dummyHoverText.node().getBoundingClientRect().width / 2
+              );
+            })
+            .attr("y", function() {
+              return (
+                data.y -
+                dummyHoverText.node().getBoundingClientRect().height -
+                10
+              );
+            })
+            .attr("dy", function() {
+              return "-0.75em";
+            })
+            .attr("fill-opacity", 1)
+            .html(function() {
+              var x = d3.select(this).attr("x");
+              return text_wrap(
+                data["Business Description"],
+                data["Startup"],
+                x
+              );
+            });
+
+          if (filterKey === "" && audienceFilterKey === "") {
+            nodes
+              .attr("opacity", function(d) {
+                if (d["Sub Value Chain"] === data["Sub Value Chain"]) {
+                  return 1;
+                } else {
+                  return 0.3;
+                }
+              })
+              .attr("r", function(d) {
+                if (d["Sub Value Chain"] === data["Sub Value Chain"]) {
+                  return 4;
+                } else {
+                  return 3;
+                }
+              });
+          }
+
+          key.attr("opacity", function(d) {
+            if (d.key === data["Sub Value Chain"]) {
+              return 1;
+            } else {
+              return 0.3;
+            }
+          });
+
+          audienceKey.attr("opacity", function(d) {
+            if (d.key === data["Audience"]) {
+              return 1;
+            } else {
+              return 0.3;
+            }
+          });
+        }
+
+        function text_wrap(text_data, text_title, x, limit = 35) {
+          words = text_data.split(/\s+/);
+          //console.log(words_alt);
+          lines = [];
+          current_seq_len = 0;
+          current_seq = [];
+          result =
+            "<tspan x=" +
+            x +
+            " dy='0em' class='wrap-header'>" +
+            text_title +
+            "</tspan>";
+          for (i = 0; i < words.length; i++) {
+            current_seq_len += words[i].length;
+            current_seq.push(words[i].replace(/�۪/g, "'"));
+            if (current_seq_len > limit) {
+              lines.push(current_seq);
+              current_seq_len = 0;
+              current_seq = [];
+            }
+          }
+          lines.push(current_seq);
+          for (i = 0; i < lines.length; i++) {
+            tmp = "";
+            for (j = 0; j < lines[i].length; j++) {
+              if (j !== lines[i].length - 1) {
+                tmp += lines[i][j] + " ";
+              } else {
+                tmp += lines[i][j];
+              }
+            }
+            result += "<tspan x=" + x + " dy='1.1em'>" + tmp + "</tspan>";
+          }
+          return result;
+        }
+
+        function nodeMouseOut() {
+          d3.select("#node-mouse-over-dummy-text").remove();
+          d3.select("#node-mouse-over-box").remove();
+          d3.select("#node-mouse-over-actual-text").remove();
+          if (filterKey === "" && audienceFilterKey === "") {
+            nodes
+              .attr("opacity", function(d) {
+                return d.opacity;
+              })
+              .attr("r", function(d) {
+                return d.radius;
+              });
+          }
+          key.attr("opacity", function(d) {
+            if (d.key === filterKey) {
+              return 1;
+            } else {
+              return 0.3;
+            }
+          });
+
+          audienceKey.attr("opacity", function(d) {
+            if (d.key === audienceFilterKey) {
+              return 1;
+            } else {
+              return 0.3;
+            }
+          });
+        }
+
+        function save_split() {
+          for (i = 0; i < count_by_value_chain.length; i++) {
+            var selection =
+              "#background-segment-" +
+              count_by_value_chain[i].key
+                .replace(/ /g, "-")
+                .replace(/&/g, "and");
+            var tmp_width =
+              d3
+                .select(selection)
+                .node()
+                .getBoundingClientRect().width + 200;
+            var tmp_height =
+              d3
+                .select(selection)
+                .node()
+                .getBoundingClientRect().height + 100;
+
+            var tmp_svg = d3
+              .select("#tmp-container")
+              .append("svg")
+              .attr("width", tmp_width)
+              .attr("height", tmp_height);
+
+            if (i === 0) {
+              var hor = tmp_width - 150;
+              var ver = tmp_height - 25;
+            }
+            if (i === 1) {
+              var hor = tmp_width - 150;
+              var ver = tmp_height - 25;
+            }
+            if (i === 2) {
+              var hor = tmp_width - 175;
+              var ver = tmp_height - 25;
+            }
+            if (i === 3) {
+              var hor = tmp_width - 250;
+              var ver = tmp_height - 25;
+            }
+            if (i === 4) {
+              var hor = tmp_width - 450;
+              var ver = tmp_height - 25;
+            }
+            if (i === 5) {
+              var hor = tmp_width - 425;
+              var ver = tmp_height - 25;
+            }
+
+            var tmp_chartSVG = tmp_svg
+              .append("g")
+              .attr("transform", "translate(" + hor + "," + ver + ")");
+
+            var tmp_existingSegments = tmp_chartSVG
+              .selectAll("existing-segments")
+              .data([count_by_value_chain[i]])
+              .enter()
+              .append("path")
+              .style("fill-opacity", 1)
+              .attr("class", function(d) {
+                return (
+                  "existing-segments segment-" +
+                  d.key.replace(/ /g, "-").replace(/&/g, "and")
+                );
+              })
+              .attr("id", function(d) {
+                return (
+                  "tmp-existing-segment-" +
+                  d.key.replace(/ /g, "-").replace(/&/g, "and")
+                );
+              })
+              .style("stroke", "white")
+              .style("stroke-width", "2px")
+              .attr("fill", "#DFDFDF") //F4F4F4
+              .attr("d", existingArc);
+
+            var tmp_emergingSegments = tmp_chartSVG
+              .selectAll("emerging-segments")
+              .data([count_by_value_chain[i]])
+              .enter()
+              .append("path")
+              .style("fill-opacity", 1)
+              .attr("class", function(d) {
+                return (
+                  "emerging-segments segment-" +
+                  d.key.replace(/ /g, "-").replace(/&/g, "and")
+                );
+              })
+              .attr("id", function(d) {
+                return (
+                  "tmp-emerging-segment-" +
+                  d.key.replace(/ /g, "-").replace(/&/g, "and")
+                );
+              })
+              .style("stroke", "white")
+              .style("stroke-width", "2px")
+              .attr("fill", "#E9E9E9")
+              .attr("d", emergingArc);
+
+            var tmp_distantSegments = tmp_chartSVG
+              .selectAll("distant-segments")
+              .data([count_by_value_chain[i]])
+              .enter()
+              .append("path")
+              .style("fill-opacity", 1)
+              .attr("class", function(d) {
+                return (
+                  "distant-segments segment-" +
+                  d.key.replace(/ /g, "-").replace(/&/g, "and")
+                );
+              })
+              .attr("id", function(d) {
+                return (
+                  "tmp-distant-segment-" +
+                  d.key.replace(/ /g, "-").replace(/&/g, "and")
+                );
+              })
+              .style("stroke", "white")
+              .style("stroke-width", "2px")
+              .attr("fill", "#F4F4F4") //DFDFDF
+              .attr("d", distantArc);
+
+            var tmp_nodes = tmp_chartSVG
+              .selectAll("nodes")
+              .data(data)
+              .enter()
+              .append("circle")
+              .attr("class", function(d) {
+                return "nodes nodes-" + d["Value Chain"].replace(/ /g, "-");
+              })
+              .attr("r", function(d) {
+                return d.radius;
+              })
+              .attr("opacity", function(d) {
+                return d.opacity;
+              })
+              .attr("fill", function(d) {
+                return subVal_color(d["Sub Value Chain"]);
+              })
+              .attr("cx", function(d) {
+                if (d["Value Chain"] === count_by_value_chain[i].key) {
+                  return d.x;
+                }
+              })
+              .attr("cy", function(d) {
+                if (d["Value Chain"] === count_by_value_chain[i].key) {
+                  return d.y;
+                }
+              })
+              .attr("opacity", function(d) {
+                if (d["Value Chain"] === count_by_value_chain[i].key) {
+                  return d.opacity;
+                } else {
+                  return 0;
+                }
+              });
+
+            var name = count_by_value_chain[i].key;
+
+            var svgString = getSVGString(tmp_svg.node());
+
+            svgString2Image(
+              svgString,
+              tmp_width * 2,
+              tmp_height * 2,
+              "png",
+              name,
+              save
+            );
+
+            function save(dataBlob, filesize, name) {
+              saveAs(dataBlob, "radar " + name + ".png");
+            }
+
+            tmp_svg.remove();
+          }
+
+          //
+        }
+
+        // Set-up the export button
+        d3.select("#save-button").on("click", function() {
+          save_split();
+
+          var svgString = getSVGString(svg.node());
+          var name = "";
+
+          svgString2Image(svgString, width * 2, height * 2, "png", name, save);
+
+          function save(dataBlob, filesize, name) {
+            saveAs(dataBlob, "radar.png");
+          }
+          // passes Blob and filesize String to the callback
+        });
+
+        // Below are the functions that handle actual exporting:
+        // getSVGString ( svgNode ) and svgString2Image( svgString, width, height, format, callback )
+        function getSVGString(svgNode) {
+          svgNode.setAttribute("xlink", "http://www.w3.org/1999/xlink");
+          var cssStyleText = getCSSStyles(svgNode);
+          appendCSS(cssStyleText, svgNode);
+
+          var serializer = new XMLSerializer();
+          var svgString = serializer.serializeToString(svgNode);
+          svgString = svgString.replace(/(\w+)?:?xlink=/g, "xmlns:xlink=");
+          svgString = svgString.replace(/NS\d+:href/g, "xlink:href");
+          svgString = svgString.replace(/"Graphik Regular";/g, "arial;");
+          svgString = svgString.replace(/"Graphik Bold";/g, "arial;");
+
+          return svgString;
+
+          function getCSSStyles(parentElement) {
+            var selectorTextArr = [];
+
+            // Add Parent element Id and Classes to the list
+            selectorTextArr.push("#" + parentElement.id);
+            for (var c = 0; c < parentElement.classList.length; c++)
+              if (!contains("." + parentElement.classList[c], selectorTextArr))
+                selectorTextArr.push("." + parentElement.classList[c]);
+
+            // Add Children element Ids and Classes to the list
+            var nodes = parentElement.getElementsByTagName("*");
+            for (var i = 0; i < nodes.length; i++) {
+              var id = nodes[i].id;
+
+              if (!contains("#" + id, selectorTextArr))
+                selectorTextArr.push("#" + id);
+
+              var classes = nodes[i].classList;
+              for (var c = 0; c < classes.length; c++)
+                if (!contains("." + classes[c], selectorTextArr))
+                  selectorTextArr.push("." + classes[c]);
+            }
+            // Extract CSS Rules
+            var extractedCSSText = "";
+            for (var i = 0; i < document.styleSheets.length; i++) {
+              var s = document.styleSheets[i];
+
+              try {
+                if (!s.cssRules) continue;
+              } catch (e) {
+                if (e.name !== "SecurityError") throw e;
+                continue;
+              }
+
+              var cssRules = s.cssRules;
+
+              //manually add css rules:
+              selectorTextArr.push("textPath");
+
+              for (var r = 0; r < cssRules.length; r++) {
+                if (contains(cssRules[r].selectorText, selectorTextArr))
+                  extractedCSSText += cssRules[r].cssText;
+              }
+            }
+
+            return extractedCSSText;
+
+            function contains(str, arr) {
+              return arr.indexOf(str) === -1 ? false : true;
+            }
+          }
+
+          function appendCSS(cssText, element) {
+            var styleElement = document.createElement("style");
+            styleElement.setAttribute("type", "text/css");
+            styleElement.innerHTML = cssText;
+            var refNode = element.hasChildNodes() ? element.children[0] : null;
+            element.insertBefore(styleElement, refNode);
+          }
+        }
+
+        function svgString2Image(
+          svgString,
+          width,
+          height,
+          format,
+          name,
+          callback
+        ) {
+          var format = format ? format : "png";
+
+          var imgsrc =
+            "data:image/svg+xml;base64," +
+            btoa(unescape(encodeURIComponent(svgString)));
+
+          var canvas = document.createElement("canvas");
+          var context = canvas.getContext("2d");
+
+          canvas.width = width;
+          canvas.height = height;
+
+          var image = new Image();
+          image.onload = function() {
+            context.clearRect(0, 0, width, height);
+            context.drawImage(image, 0, 0, width, height);
+
+            canvas.toBlob(function(blob) {
+              var filesize = Math.round(blob.length / 1024) + " KB";
+              if (callback) callback(blob, filesize, name);
+            });
+          };
+
+          image.src = imgsrc;
+        }
+      }
+    );
+  </script>
+</body>
